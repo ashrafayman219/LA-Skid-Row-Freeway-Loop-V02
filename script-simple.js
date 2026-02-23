@@ -371,7 +371,7 @@ async function initializeMap() {
                     // const color = getFreewayColor(freeway);
                     
                     const freeway = 'All Links';
-                    const color = '#f0a83bff'; // Orange for all links
+                    const color = '#9C27B0'; // Purple for all links
 
                     const graphic = new Graphic({
                         geometry: polyline,
@@ -416,6 +416,8 @@ async function initializeMap() {
                     showExitPopup(graphic.attributes);
                 } else if (graphic.attributes && graphic.attributes.type === "Motorway Junction") {
                     showJunctionPopup(graphic.attributes);
+                } else if (graphic.attributes && graphic.attributes.type === "Motorway Link") {
+                    showLinkPopup(graphic.attributes);
                 } else if (graphic.attributes && graphic.attributes.title === "Incident Location") {
                     showIncidentPopup();
                 }
@@ -545,6 +547,84 @@ function showJunctionPopup(junction) {
                 <button class="popup-btn primary" onclick="zoomToExit(${junction.coords[0]}, ${junction.coords[1]})">
                     <i class="fas fa-search-plus"></i> Zoom to Junction
                 </button>
+                <button class="popup-btn secondary" onclick="hidePopup()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    popup.classList.remove('hidden');
+}
+
+// Show motorway link popup
+function showLinkPopup(link) {
+    const popup = document.getElementById('customPopup');
+    const title = document.getElementById('popupTitle');
+    const body = document.getElementById('popupBody');
+    
+    const linkColor = '#9C27B0'; // Purple for all links
+    
+    title.innerHTML = `<i class="fas fa-road"></i> Motorway Link (Ramp)`;
+    
+    const destination = link.destination || 'N/A';
+    const destRef = link.ref || 'N/A';
+    const highway = link.highway || 'motorway_link';
+    const lanes = link.lanes || 'N/A';
+    const oneway = link.oneway === 'yes' ? 'Yes' : 'No';
+    
+    body.innerHTML = `
+        <div class="popup-exit-info">
+            <div class="popup-exit-header" style="background: ${linkColor};">
+                <div class="exit-details" style="width: 100%;">
+                    <div class="exit-name" style="font-size: 18px;">${destination}</div>
+                    <div class="exit-freeway">Motorway Link / Ramp</div>
+                </div>
+            </div>
+            <div class="popup-exit-body">
+                ${destination !== 'N/A' ? `
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-map-signs"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Destination</span>
+                        <span class="info-value">${destination}</span>
+                    </div>
+                </div>
+                ` : ''}
+                ${destRef !== 'N/A' ? `
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-route"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Destination Reference</span>
+                        <span class="info-value">${destRef}</span>
+                    </div>
+                </div>
+                ` : ''}
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-road"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Type</span>
+                        <span class="info-value">${highway}</span>
+                    </div>
+                </div>
+                ${lanes !== 'N/A' ? `
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-grip-lines"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Lanes</span>
+                        <span class="info-value">${lanes}</span>
+                    </div>
+                </div>
+                ` : ''}
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-arrow-right"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">One-Way</span>
+                        <span class="info-value">${oneway}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-actions">
                 <button class="popup-btn secondary" onclick="hidePopup()">
                     <i class="fas fa-times"></i> Close
                 </button>
@@ -725,7 +805,7 @@ function setupEventHandlers(freewaysLayer, exitsLayer, junctionsLayer, linksLaye
         if (linksLayer.visible) {
             legendContent.innerHTML += `
                 <div class="legend-item">
-                    <div class="legend-line" style="background: #FFA500; height: 4px;"></div>
+                    <div class="legend-line" style="background: #9C27B0; height: 4px;"></div>
                     <span class="legend-text">Motorway Links (Ramps)</span>
                 </div>
             `;
