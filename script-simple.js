@@ -1,6 +1,60 @@
 // Incident location
 const incidentLocation = [-118.24727530262695, 34.04353275097726];
 
+// Function to determine freeway from exit reference and coordinates
+function determineFreeway(ref, coords) {
+    if (!ref || ref === 'No Ref') {
+        // Use coordinates to determine freeway
+        const lon = coords[0];
+        const lat = coords[1];
+        
+        // I-10 runs east-west along the south (roughly lat 34.02-34.05, lon -118.24 to -118.16)
+        if (lat >= 34.015 && lat <= 34.055 && lon >= -118.24 && lon <= -118.15) {
+            return 'I-10';
+        }
+        // US-101 runs along east and north edges
+        if ((lat >= 34.055 && lat <= 34.11) || (lon >= -118.23 && lon <= -118.19 && lat >= 34.07)) {
+            return 'US-101';
+        }
+        // I-110 runs north-south along the west
+        if (lon <= -118.24 && lat >= 34.02 && lat <= 34.08) {
+            return 'I-110';
+        }
+        return 'Unknown';
+    }
+    
+    // Parse the reference number
+    const refNum = parseInt(ref.replace(/[A-Z]/g, ''));
+    
+    // I-10 exits: 1D, 15-16, 129-135
+    if (ref.includes('1D') || (refNum >= 15 && refNum <= 16) || (refNum >= 129 && refNum <= 135)) {
+        return 'I-10';
+    }
+    
+    // I-110 exits: 12-24
+    if (refNum >= 12 && refNum <= 24) {
+        return 'I-110';
+    }
+    
+    // US-101 exits: 2-5, 25-29, 137-141
+    if ((refNum >= 2 && refNum <= 5) || (refNum >= 25 && refNum <= 29) || (refNum >= 137 && refNum <= 141)) {
+        return 'US-101';
+    }
+    
+    // Default: use coordinates
+    return determineFreeway('', coords);
+}
+
+// Function to get freeway color
+function getFreewayColor(freeway) {
+    switch(freeway) {
+        case 'I-10': return '#FF0000';
+        case 'US-101': return '#0066FF';
+        case 'I-110': return '#00AA00';
+        default: return '#999999';
+    }
+}
+
 // Accurate exit data extracted from OpenStreetMap GeoJSON
 // Organized clockwise around the Skid Row freeway loop
 const exits = [
@@ -80,9 +134,11 @@ async function initializeMap() {
         homeExtent = view.extent.clone();
 
         // Create layers
-        const freewaysLayer = new GraphicsLayer({ title: "Freeways" });
-        const exitsLayer = new GraphicsLayer({ title: "Exits" });
-        const incidentLayer = new GraphicsLayer({ title: "Incident" });
+        const freewaysLayer = new GraphicsLayer({ title: "Freeways", visible: false });
+        const exitsLayer = new GraphicsLayer({ title: "Exits", visible: false });
+        const motorwayJunctionsLayer = new GraphicsLayer({ title: "All Motorway Junctions", visible: true });
+        const motorwayLinksLayer = new GraphicsLayer({ title: "All Motorway Links", visible: true });
+        const incidentLayer = new GraphicsLayer({ title: "Incident", visible: true });
 
         // Load and draw freeways from GeoJSON
         const freewaysData = await loadGeoJSON("roads in LA.geojson");
@@ -211,8 +267,138 @@ async function initializeMap() {
 
         incidentLayer.addMany([incidentMarker, incidentStar]);
 
+        // Load and display all motorway junctions
+        const junctionsData = await loadGeoJSON("motorway_junction.geojson");
+        if (junctionsData) {
+            for (const feature of junctionsData.features) {
+                if (feature.geometry.type === 'Point') {
+                    const point = new Point({
+                        longitude: feature.geometry.coordinates[0],
+                        latitude: feature.geometry.coordinates[1]
+                    });
+
+                    const ref = feature.properties.ref || feature.properties.unsigned_ref || 'No Ref';
+                    // COMMENTED: Color-coding by freeway
+                    // const freeway = determineFreeway(ref, feature.geometry.coordinates);
+                    // const color = getFreewayColor(freeway);
+                    const freeway = 'All Junctions';
+                    const color = '#FF6B35'; // Orange for all junctions
+                    
+                    // Adjust marker size based on text length
+                    let markerSize = 18;
+                    if (ref.length > 3) {
+                        markerSize = 24; // Larger for longer text like "No Ref"
+                    }
+                    
+                    // Junction marker (smaller than main exits, colored by freeway)
+                    const marker = new Graphic({
+                        geometry: point,
+                        symbol: {
+                            type: "simple-marker",
+                            color: color,
+                            size: markerSize,
+                            outline: {
+                                color: "#FFFFFF",
+                                width: 2
+                            }
+                        },
+                        attributes: {
+                            ref: ref,
+                            type: "Motorway Junction",
+                            freeway: freeway,
+                            coords: feature.geometry.coordinates,
+                            ...feature.properties
+                        }
+                    });
+
+                    // Junction label with enhanced styling
+                    const label = new Graphic({
+                        geometry: point,
+                        symbol: {
+                            type: "text",
+                            color: "#FFFFFF",
+                            text: ref,
+                            font: {
+                                size: ref.length > 3 ? 8 : 9, // Smaller font for longer text
+                                weight: "bold",
+                                family: "Arial"
+                            },
+                            haloColor: "#000000",
+                            haloSize: 1.5,
+                            yoffset: 0,
+                            xoffset: 0
+                        },
+                        attributes: marker.attributes
+                    });
+
+                    motorwayJunctionsLayer.addMany([marker, label]);
+                }
+            }
+        }
+
+        // Load and display all motorway links (ramps)
+        const linksData = await loadGeoJSON("motorway_link_Not_Just_Exit_Points.geojson");
+        if (linksData) {
+            for (const feature of linksData.features) {
+                if (feature.geometry.type === 'LineString') {
+                    const polyline = {
+                        type: "polyline",
+                        paths: [feature.geometry.coordinates]
+                    };
+
+                    // COMMENTED: Determine freeway from destination:ref or junction:ref or coordinates
+                    // let freeway = 'Unknown';
+                    // const destRef = feature.properties['destination:ref'] || '';
+                    // const junctionRef = feature.properties['junction:ref'] || '';
+                    // 
+                    // // Check destination reference
+                    // if (destRef.includes('I 10') || destRef.includes('I-10')) {
+                    //     freeway = 'I-10';
+                    // } else if (destRef.includes('US 101') || destRef.includes('101')) {
+                    //     freeway = 'US-101';
+                    // } else if (destRef.includes('I 110') || destRef.includes('110') || destRef.includes('CA 110')) {
+                    //     freeway = 'I-110';
+                    // } else if (junctionRef) {
+                    //     // Use junction reference to determine freeway
+                    //     const midPoint = feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length / 2)];
+                    //     freeway = determineFreeway(junctionRef, midPoint);
+                    // } else {
+                    //     // Use midpoint coordinates
+                    //     const midPoint = feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length / 2)];
+                    //     freeway = determineFreeway('', midPoint);
+                    // }
+                    // 
+                    // const color = getFreewayColor(freeway);
+                    
+                    const freeway = 'All Links';
+                    const color = '#f0a83bff'; // Orange for all links
+
+                    const graphic = new Graphic({
+                        geometry: polyline,
+                        symbol: {
+                            type: "simple-line",
+                            color: color,
+                            width: 3,
+                            style: "solid",
+                            cap: "round",
+                            join: "round"
+                        },
+                        attributes: {
+                            type: "Motorway Link",
+                            freeway: freeway,
+                            destination: feature.properties.destination || 'N/A',
+                            ref: feature.properties['destination:ref'] || 'N/A',
+                            ...feature.properties
+                        }
+                    });
+
+                    motorwayLinksLayer.add(graphic);
+                }
+            }
+        }
+
         // Add layers to map
-        map.addMany([freewaysLayer, exitsLayer, incidentLayer]);
+        map.addMany([freewaysLayer, motorwayLinksLayer, motorwayJunctionsLayer, exitsLayer, incidentLayer]);
 
         // Add basemap toggle
         const basemapToggle = new BasemapToggle({
@@ -228,6 +414,8 @@ async function initializeMap() {
                 const graphic = response.results[0].graphic;
                 if (graphic.attributes && graphic.attributes.num) {
                     showExitPopup(graphic.attributes);
+                } else if (graphic.attributes && graphic.attributes.type === "Motorway Junction") {
+                    showJunctionPopup(graphic.attributes);
                 } else if (graphic.attributes && graphic.attributes.title === "Incident Location") {
                     showIncidentPopup();
                 }
@@ -237,7 +425,7 @@ async function initializeMap() {
         });
 
         // Event handlers
-        setupEventHandlers();
+        setupEventHandlers(freewaysLayer, exitsLayer, motorwayJunctionsLayer, motorwayLinksLayer, incidentLayer);
 
         console.log("Simplified map loaded successfully");
 
@@ -298,6 +486,64 @@ function showExitPopup(exit) {
             <div class="popup-actions">
                 <button class="popup-btn primary" onclick="zoomToExit(${exit.coords[0]}, ${exit.coords[1]})">
                     <i class="fas fa-search-plus"></i> Zoom to Exit
+                </button>
+                <button class="popup-btn secondary" onclick="hidePopup()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    popup.classList.remove('hidden');
+}
+
+// Show motorway junction popup
+function showJunctionPopup(junction) {
+    const popup = document.getElementById('customPopup');
+    const title = document.getElementById('popupTitle');
+    const body = document.getElementById('popupBody');
+    
+    // COMMENTED: Color-coding by freeway
+    // const freewayColor = getFreewayColor(junction.freeway);
+    const freewayColor = '#FF6B35'; // Orange for all
+    
+    title.innerHTML = `<i class="fas fa-map-signs"></i> Motorway Junction`;
+    
+    body.innerHTML = `
+        <div class="popup-exit-info">
+            <div class="popup-exit-header" style="background: ${freewayColor};">
+                <div class="exit-number">${junction.ref}</div>
+                <div class="exit-details">
+                    <div class="exit-name">Exit Reference: ${junction.ref}</div>
+                    <div class="exit-freeway">Motorway Junction</div>
+                </div>
+            </div>
+            <div class="popup-exit-body">
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-map-marker-alt"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Location</span>
+                        <span class="info-value">${junction.coords[1].toFixed(6)}°N, ${Math.abs(junction.coords[0]).toFixed(6)}°W</span>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-sign"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Exit Reference</span>
+                        <span class="info-value">${junction.ref}</span>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <span class="info-icon"><i class="fas fa-road"></i></span>
+                    <div class="info-content">
+                        <span class="info-label">Type</span>
+                        <span class="info-value">Motorway Junction</span>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-actions">
+                <button class="popup-btn primary" onclick="zoomToExit(${junction.coords[0]}, ${junction.coords[1]})">
+                    <i class="fas fa-search-plus"></i> Zoom to Junction
                 </button>
                 <button class="popup-btn secondary" onclick="hidePopup()">
                     <i class="fas fa-times"></i> Close
@@ -390,7 +636,7 @@ async function loadGeoJSON(url) {
 }
 
 // Setup event handlers
-function setupEventHandlers() {
+function setupEventHandlers(freewaysLayer, exitsLayer, junctionsLayer, linksLayer, incidentLayer) {
     document.getElementById('zoomInBtn').addEventListener('click', () => {
         view.zoom += 1;
     });
@@ -403,6 +649,117 @@ function setupEventHandlers() {
         if (homeExtent) {
             view.goTo(homeExtent, { duration: 1000, easing: "ease-in-out" });
         }
+    });
+
+    // Toggle layer list panel
+    const toggleLayerListBtn = document.getElementById('toggleLayerList');
+    const layerListPanel = document.getElementById('layerListPanel');
+    const closeLayerListBtn = document.getElementById('closeLayerList');
+
+    // Set initial state - layer list is open by default
+    toggleLayerListBtn.classList.add('active');
+
+    toggleLayerListBtn.addEventListener('click', () => {
+        layerListPanel.classList.toggle('visible');
+        toggleLayerListBtn.classList.toggle('active');
+    });
+
+    closeLayerListBtn.addEventListener('click', () => {
+        layerListPanel.classList.remove('visible');
+        toggleLayerListBtn.classList.remove('active');
+    });
+
+    // Layer visibility controls
+    const layerMap = {
+        'freeways': freewaysLayer,
+        'exits': exitsLayer,
+        'junctions': junctionsLayer,
+        'links': linksLayer,
+        'incident': incidentLayer
+    };
+
+    // Update legend based on visible layers
+    function updateLegend() {
+        const legendContent = document.getElementById('legendContent');
+        legendContent.innerHTML = '';
+
+        // Freeways legend
+        if (freewaysLayer.visible) {
+            legendContent.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-line" style="background: #FF0000;"></div>
+                    <span class="legend-text">I-10 (South)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line" style="background: #0066FF;"></div>
+                    <span class="legend-text">US-101 (East/North)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line" style="background: #00AA00;"></div>
+                    <span class="legend-text">I-110 (West)</span>
+                </div>
+            `;
+        }
+
+        // Main exits legend
+        if (exitsLayer.visible) {
+            legendContent.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-symbol" style="background: #FFD700; color: #000;">1</div>
+                    <span class="legend-text">Old Exit Numbers</span>
+                </div>
+            `;
+        }
+
+        // Motorway junctions legend
+        if (junctionsLayer.visible) {
+            legendContent.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-symbol" style="background: #FF6B35; color: #FFF; font-size: 10px;">24A</div>
+                    <span class="legend-text">All Motorway Junctions</span>
+                </div>
+            `;
+        }
+
+        // Motorway links legend
+        if (linksLayer.visible) {
+            legendContent.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-line" style="background: #FFA500; height: 4px;"></div>
+                    <span class="legend-text">Motorway Links (Ramps)</span>
+                </div>
+            `;
+        }
+
+        // Incident location legend
+        if (incidentLayer.visible) {
+            legendContent.innerHTML += `
+                <div class="legend-item">
+                    <div class="legend-symbol" style="background: #FF00FF;">★</div>
+                    <span class="legend-text">Incident Location</span>
+                </div>
+            `;
+        }
+
+        // Show message if no layers are visible
+        if (legendContent.innerHTML === '') {
+            legendContent.innerHTML = '<p style="color: #999; font-size: 14px; padding: 10px; text-align: center;">No layers visible</p>';
+        }
+    }
+
+    // Initial legend update
+    updateLegend();
+
+    // Add event listeners to all layer checkboxes
+    document.querySelectorAll('.layer-checkbox input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', (e) => {
+            const layerName = e.target.getAttribute('data-layer');
+            const layer = layerMap[layerName];
+            if (layer) {
+                layer.visible = e.target.checked;
+                updateLegend(); // Update legend when layer visibility changes
+            }
+        });
     });
 }
 
